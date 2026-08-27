@@ -28,7 +28,7 @@ Euler angles, where they are accepted instead, are extrinsic x-y-z in degrees (S
 
 ## Gravity
 
-Gravity defaults to `(0, 0, -9.81)`, i.e. `-Z` with a magnitude of 9.81 m/s². With no other forces applied, objects fall along `-Z`. Set it per scene through `gs.options.SimOptions(gravity=...)`.
+Gravity defaults to `(0, 0, -9.81)`, i.e. `-Z` with a magnitude of 9.81 m/s². With no other forces applied, objects fall along `-Z`. Set it for the whole scene through `gs.options.SimOptions(gravity=...)`, or for one solver through the `gravity` field of its own options, and change it at runtime through that solver, for example `scene.rigid_solver.set_gravity(gravity, envs_idx)`.
 
 ## Axis conversion at import time
 

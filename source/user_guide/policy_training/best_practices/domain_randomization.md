@@ -22,26 +22,24 @@ robot.set_friction_ratio(
     links_idx_local=np.arange(0, robot.n_links),
 )
 
-# Perturb each link's mass by a per-env offset in [-0.5, 0.5) kg.
-robot.set_mass_shift(
-    mass_shift=-0.5 + torch.rand(scene.n_envs, robot.n_links),
-    links_idx_local=np.arange(0, robot.n_links),
+# Scale each link's mass by a per-env factor in [0.75, 1.25).
+robot.set_links_mass(
+    mass=robot.get_links_mass() * (0.75 + 0.5 * torch.rand(scene.n_envs, robot.n_links, device=gs.device)),
 )
 
 # Shift each link's center of mass by up to 5 cm on each axis.
-robot.set_COM_shift(
-    com_shift=-0.05 + 0.1 * torch.rand(scene.n_envs, robot.n_links, 3),
-    links_idx_local=np.arange(0, robot.n_links),
+robot.set_links_COM(
+    com=robot.get_links_COM() + (-0.05 + 0.1 * torch.rand(scene.n_envs, robot.n_links, 3, device=gs.device)),
 )
 ```
 
 The three methods differ in what they modify:
 
 - **`set_friction_ratio`:** multiplies each geom's base friction coefficient by the supplied factor, shape `(n_envs, n_links)`. It scales rather than replaces, so a ratio of `1.0` leaves the model's friction unchanged. To set an absolute coefficient for the whole entity instead, use `set_friction(friction)`, which takes a single float and requires it in the range `[1e-2, 5.0]` for stability.
-- **`set_mass_shift`:** adds a mass offset in kg to each link, shape `(n_envs, n_links)`. It shifts the model's mass rather than replacing it.
-- **`set_COM_shift`:** adds a center-of-mass offset in meters to each link, shape `(n_envs, n_links, 3)`, in the link's local frame.
+- **`set_links_mass`:** sets the mass of each link in kg, shape `(n_envs, n_links)`, and leaves its inertia as authored. It takes the mass itself, which is why the example reads the model's masses back with `get_links_mass` and writes scaled ones.
+- **`set_links_COM`:** sets the center of mass of each link in meters, shape `(n_envs, n_links, 3)`, as an offset in the link's local frame. It takes the position itself too, so the example shifts what `get_links_COM` returns.
 
-These three write to per-environment state buffers, so they work whether or not the scene batches its static model info. Pass `envs_idx` to any of them to restrict the update to a subset of environments.
+`set_friction_ratio` writes per-environment state, so it works in any scene. A per-environment mass or center of mass describes the model itself, which Genesis World stores per environment only when the scene is built with `batch_links_info=True` (see the warning below). A single value shared by every environment needs no flag. Pass `envs_idx` to any of them to restrict the update to a subset of environments.
 
 ## Randomizing actuator gains
 
@@ -57,7 +55,7 @@ robot.set_dofs_armature(0.01 + 0.02 * torch.rand(scene.n_envs, robot.n_dofs), mo
 `set_dofs_kp` and `set_dofs_kv` set the position and velocity gains of the PD controller; `set_dofs_armature` sets the reflected motor inertia, which stabilizes stiff joints. The second positional argument is `dofs_idx_local`, the entity-local dof indices to update, matching the `motors_dof_idx` you build from joint names.
 
 :::{warning}
-Per-environment dof gains require batched dof info. The controller gains live in the model's static info fields, which are stored per environment only when the scene is built with the corresponding option. Enable it in {py:class}`RigidOptions <genesis.options.solvers.RigidOptions>`:
+Per-environment dof gains require batched dof info, and per-environment link masses, centers of mass and inertias require batched link info. Both live in the model's static info fields, which are stored per environment only when the scene is built with the corresponding option. Enable it in {py:class}`RigidOptions <genesis.options.solvers.RigidOptions>`:
 
 ```python
 scene = gs.Scene(
@@ -68,7 +66,7 @@ scene = gs.Scene(
 )
 ```
 
-Without `batch_dofs_info=True`, a gain tensor with an `n_envs` dimension has nowhere to go. The state-based setters above (`set_friction_ratio`, `set_mass_shift`, `set_COM_shift`) need no such flag.
+Without `batch_dofs_info=True`, a gain tensor with an `n_envs` dimension has nowhere to go, and the same holds for a per-environment mass, center of mass or inertia without `batch_links_info=True`. `set_friction_ratio` needs neither flag.
 :::
 
 ## Randomizing commands and states per episode
@@ -97,13 +95,14 @@ The same principle applies to spawn poses and reset states: build the randomized
 | Method | Shape | Randomizes |
 |---|---|---|
 | `set_friction_ratio` | `(n_envs, n_links)` | Per-link friction, as a multiplier on the base coefficient |
-| `set_mass_shift` | `(n_envs, n_links)` | Per-link additive mass offset (kg) |
-| `set_COM_shift` | `(n_envs, n_links, 3)` | Per-link center-of-mass offset (m) |
+| `set_links_mass` | `(n_envs, n_links)` | Per-link mass (kg) |
+| `set_links_COM` | `(n_envs, n_links, 3)` | Per-link center of mass (m), in the link frame |
+| `set_links_inertia` | `(n_envs, n_links, 3, 3)` | Per-link inertia matrix, in the inertial frame |
 | `set_dofs_kp` | `(n_envs, n_dofs)` | PD position gain |
 | `set_dofs_kv` | `(n_envs, n_dofs)` | PD velocity gain |
 | `set_dofs_armature` | `(n_envs, n_dofs)` | Reflected motor inertia |
 
-All six accept an optional `envs_idx` to update a subset of environments. The gain and armature setters require `batch_dofs_info=True`; the friction, mass, and COM setters do not.
+All seven accept an optional `envs_idx` to update a subset of environments. The gain and armature setters require `batch_dofs_info=True`, the mass, center of mass and inertia setters require `batch_links_info=True`, and `set_friction_ratio` requires neither.
 
 ## Guidelines
 

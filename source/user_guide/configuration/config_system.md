@@ -44,17 +44,19 @@ You never instantiate `Options` directly; you always use a concrete subclass. Ea
 
 `SimOptions` holds settings that are global by default: most importantly the timestep `dt` (seconds) and `gravity` (m/s², pointing down `-Z`). Each solver also exposes those same settings on its own options object, where they default to `None`.
 
-A value set on a solver's options overrides the global `SimOptions` value, for that solver only, and a solver whose field is left at `None` inherits the global value. This lets most scenes set `dt` once while allowing a single solver to run at a different rate.
+A value set on a solver's options overrides the global `SimOptions` value, for that solver only, and a solver whose field is left at `None` inherits the global value.
+
+`SimOptions.dt` is how much simulated time one `scene.step()` advances. A solver's `dt` is the interval it integrates over, so it must divide the step a whole number of times, and that quotient is the number of substeps per step. Every active solver advances together, so the count one solver asks for is the count they all take, and two solvers asking for different intervals raise. `SimOptions.substeps` requests the same count directly, and setting both raises unless they agree.
 
 ```python
 scene = gs.Scene(
-    sim_options=gs.options.SimOptions(dt=0.01),        # global timestep
-    rigid_options=gs.options.RigidOptions(dt=0.005),   # rigid solver only, overrides the global dt
-    # mpm_options left unset -> the MPM solver, if used, inherits dt=0.01
+    sim_options=gs.options.SimOptions(dt=0.01),        # one step advances 0.01 s
+    rigid_options=gs.options.RigidOptions(dt=0.005),   # two substeps per step, for every solver
+    # mpm_options left unset -> the MPM solver, if used, integrates twice per step as well, over 0.005 s
 )
 ```
 
-The same inheritance applies to `gravity`. Settings that are meaningful only to one solver (for example `RigidOptions.constraint_solver` or `RigidOptions.max_collision_pairs`) live solely on that solver's options and have no global counterpart.
+The same inheritance applies to `gravity`, and each solver keeps its own value, so read it back from the solver simulating the entity, for example `scene.rigid_solver.get_gravity(envs_idx)`. A scene coupling its solvers through IPC applies the `SimOptions` gravity to every body it couples, so a coupled solver authoring a different one raises at build time. Settings that are meaningful only to one solver (for example `RigidOptions.constraint_solver` or `RigidOptions.max_collision_pairs`) live solely on that solver's options and have no global counterpart.
 
 ## Scene-level option groups
 
