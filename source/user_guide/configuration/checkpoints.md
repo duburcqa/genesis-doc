@@ -1,23 +1,23 @@
 # Checkpoints and simulation state
 
-A checkpoint is a snapshot of the dynamic state of a scene at one instant: the numbers the physics solvers advance every step, such as joint positions, velocities, and particle fields. Capturing that snapshot and restoring it later lets you rewind a simulation, reset an environment between episodes, or resume a long run after a crash, deterministically, from the exact state you left.
+A simulation has two things worth keeping. The first is its *dynamic state*: the numbers the physics solvers advance every step, such as joint positions, velocities, and particle fields. Capturing that state and restoring it later lets you rewind a simulation or reset an environment between episodes, deterministically, from the exact state you left. The second is the *scene itself*: the entities, their geometry, and every option the scene was created with. Writing that to a file lets someone else open the very scene you built, on a machine holding none of the assets you built it from.
 
-Genesis World exposes two levels of this. The state model is the same underneath; the difference is where the snapshot lives.
+Genesis World keeps the two apart, because they answer different needs.
 
-- **In memory:** `scene.get_state()` returns a {py:class}`SimState <genesis.engine.states.solvers.SimState>` object, and `scene.reset(state=...)` writes it back. Fast, and the basis of episode resets in reinforcement learning.
-- **On disk:** `scene.save_checkpoint(path)` pickles the full physics state to one file, and `scene.load_checkpoint(path)` restores it into a matching scene. Use it to persist a run across processes.
+- **Dynamic state, in memory:** `scene.get_state()` returns a {py:class}`SimState <genesis.engine.states.solvers.SimState>` object, and `scene.reset(state=...)` writes it back. Fast, and the basis of episode resets in reinforcement learning.
+- **The scene, on disk:** `scene.export(path)` writes a `.gscene` file, and `gs.Scene.load(path)` opens it into a new scene, ready to build. Use it to share a scene, attach one to a bug report, or rebuild one without its assets.
 
-All of these operate on a built scene. Build first, then snapshot.
+A state snapshot assumes the scene it came from is already built. A scene file carries no simulated state, so a scene opened from one stands at the configuration its entities were given, and the state has to be reproduced by stepping it again.
 
 ## State model
 
 A snapshot captures only the *dynamic* state: the fields that change as the simulation steps. It does not capture the scene's *structure*: the entities, their morphs, the solver options, or the number of environments. That structure is fixed by how you build the scene, and restoring a snapshot assumes it is already in place.
 
 - **`SimState`:** the object returned by `scene.get_state()`. It holds one per-solver state object for each active solver, batched over environments.
-- **Dynamic state:** positions, velocities, and the internal fields each solver integrates. This is what a checkpoint saves and restores.
-- **Static structure:** entities, morphs, geometry, and solver configuration. Not saved. Rebuild it exactly before restoring, and it must match.
+- **Dynamic state:** positions, velocities, and the internal fields each solver integrates. This is what a snapshot holds.
+- **Static structure:** entities, morphs, geometry, and solver configuration. A snapshot leaves it out, and a scene file is how it travels (see below).
 
-Because structure is not part of the snapshot, a checkpoint is only valid for a scene built the same way. Restoring into a scene with different entities or solver options is undefined.
+Because structure is not part of the snapshot, a snapshot is only valid for the scene it was taken from, or one built the same way. Restoring into a scene with different entities or solver options is undefined.
 
 ## Snapshot and restore in memory
 
@@ -34,8 +34,10 @@ state = scene.get_state()  # snapshot the state at step 100
 for _ in range(50):
     scene.step()
 
-scene.reset(state=state)  # rewind to the snapshot; the sim continues from step 100
+scene.reset(state=state)  # rewind to the snapshot; the physics continue from there
 ```
+
+A reset also sets the simulated time of the environments it touches back to zero, whichever snapshot it restores, so `scene.get_time()` counts from the reset rather than from the build.
 
 :::{warning}
 Passing `state` to `reset()` also registers it as the scene's initial state. A subsequent bare `scene.reset()` returns to *this* snapshot, not to the state the scene had at build time. Keep a separate reference to your build-time state if you need both.
@@ -74,71 +76,55 @@ for step in range(episode_length):
 
 `envs_idx` applies only to a scene built with environments, so on a non-parallelized scene it raises.
 
-## Saving to disk
+## Sharing a scene as a file
 
-`save_checkpoint` writes the full physics state (the scene's own fields plus every active solver's fields) to a single pickle file. Restoring requires a scene that was built the same way:
-
-```python
-# Process A: run and save.
-scene.build()
-for _ in range(100):
-    scene.step()
-scene.save_checkpoint("run.pkl")
-```
+`scene.export(path)` writes what the scene was authored from and what its build resolved: every entity's description, with its geometry, textures and physical coefficients, beside every option the scene was created with. No filesystem path goes into the file, so it opens on a machine holding none of the meshes, model files or textures the scene came from. `gs.Scene.load(path)` creates that scene, holding every entity it was authored with and waiting to be built:
 
 ```python
-# Process B: rebuild the same scene, then restore.
+# Wherever the scene was authored.
 scene = gs.Scene()
+scene.add_entity(gs.morphs.Plane())
 robot = scene.add_entity(gs.morphs.MJCF(file="xml/franka_emika_panda/panda.xml"))
-scene.build()
-
-scene.load_checkpoint("run.pkl")  # restores state and scene.t
+scene.export("franka.gscene")
 ```
 
-`load_checkpoint` also restores `scene.t`, the simulation step count, so a resumed run reports the correct step index.
+```python
+# Anywhere else, with no asset on disk.
+scene = gs.Scene.load("franka.gscene")
+scene.build(n_envs=16)
+scene.step()
+```
 
-## What a checkpoint contains
+Adding an entity resolves its description, so a scene is exported before it is built as readily as after, and the number of environments is chosen by whoever builds the loaded scene. A scene file is the right thing to attach to a bug report: a maintainer opens it and steps the exact scene you had, with none of your script and none of your assets.
 
-The dynamic state each solver contributes to a snapshot:
+The file names what it holds rather than carrying code to run. Genesis World creates only the options, descriptions and meshes the file declares, and rejects a value that contradicts its declared type, so a scene from a stranger is safe to open. A load also compares the layout of every class the file holds with the current one, and refuses a file written when a class meant something else, naming the class. A file written by another version of Genesis World whose classes still match loads with a warning that the simulation it describes may run differently.
+
+Every option the scene was created with travels as one {py:class}`SceneOptions <genesis.options.scene.SceneOptions>` object, reachable as `scene.options` on any scene. Passing it to `gs.Scene(options=other.options)` creates a scene from what another was created with, which is also how a loaded scene gets its options back.
+
+What a description carries is what travels, and `export` tells you about the rest:
+
+- **Refused, by name:** anything that alters the simulation and that a description leaves out, since a file without it would restore other physics: an emitter, a force field, and any entity that carries no description, which is every entity that is neither rigid nor kinematic.
+- **Written without, with a warning naming it:** what observes or draws the simulation rather than shaping it. A camera, a recorder, a sensor, a callback Genesis World calls at every step, a texture read from an HDR or EXR file, and the visual vertices an entity was given at runtime. Add those back on the loaded scene.
+
+## What a snapshot contains
+
+The dynamic state each solver contributes to a `SimState`:
 
 | Solver | State fields |
 |---|---|
-| Rigid | `qpos`, `dofs_vel`, `dofs_acc`, `links_pos`, `links_quat` |
+| Rigid | `qpos`, `dofs_vel`, `dofs_acc`, `links_pos`, `links_quat`, `friction_ratio` |
+| Kinematic | `qpos`, `dofs_vel`, `links_pos`, `links_quat` |
 | MPM | `pos`, `vel`, `C`, `F`, `Jp`, `active` |
 | SPH | `pos`, `vel`, `active` |
 | PBD | `pos`, `vel`, `free` |
 | FEM | `pos`, `vel`, `active` |
 
-On disk, a checkpoint is a pickled dictionary. The `arrays` entry is a flat map from a `"Class.field"` key to the raw NumPy array of that field:
-
-```python
-{
-    "timestamp": ...,   # time.time() at save
-    "step_index": ...,  # scene.t at save
-    "arrays": {
-        "RigidSolver.qpos": ...,
-        "MPMSolver.pos": ...,
-        # ... one entry per solver field ...
-    },
-}
-```
-
 ## Reproducibility notes
 
-- **Configuration must match.** A checkpoint restores fields by name into an already-built scene. The entities, solver options, and environment count must match the scene that produced it. There is no compatibility check: a mismatch fails or silently corrupts state.
-- **Precision limits exactness.** Genesis World uses 32-bit floats by default (see {doc}`initialization`). A save/load round trip is therefore accurate to roughly single-precision, not bit-exact. Initialize with `precision="64"` if you need tighter reproducibility.
-- **Serialize before pickling a `SimState`.** A `SimState` returned by `get_state()` holds live references back into the scene and its autograd graph. Call `state.serializable()` first to detach the tensors and drop those references, then pickle it yourself. `save_checkpoint` handles this for you.
-
-```python
-state = scene.get_state()
-state.serializable()  # detach tensors; safe to pickle
-
-import pickle
-with open("state.pkl", "wb") as f:
-    pickle.dump(state, f)
-```
+- **Configuration must match.** A snapshot restores fields by position into an already-built scene. The entities, solver options, and environment count must match the scene that produced it. There is no compatibility check: a mismatch fails or silently corrupts state.
+- **Precision limits exactness.** Genesis World uses 32-bit floats by default (see {doc}`initialization`). Reproducing a run by stepping a loaded scene, or restoring a snapshot that went through a file, is therefore accurate to roughly single precision, not bit-exact. Initialize with `precision="64"` if you need tighter reproducibility.
 
 ## See also
 
 - {doc}`Parallel simulation </user_guide/getting_started/parallel_simulation>`: how state is batched over environments.
-- {doc}`Scene API </api_reference/engine/scene>`: the full signatures of `get_state`, `reset`, `save_checkpoint`, and `load_checkpoint`.
+- {doc}`Scene API </api_reference/engine/scene>`: the full signatures of `get_state`, `reset`, `export`, and `load`.
