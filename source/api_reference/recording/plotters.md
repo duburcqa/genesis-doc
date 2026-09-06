@@ -1,6 +1,6 @@
 # Plotters
 
-A plotter visualizes sampled data live as the scene steps, and can save the animation. Pass one as the `rec_options` argument of `scene.start_recording`. See {doc}`index` for the recording workflow and the shared options (`hz`, `buffer_size`) that every plotter inherits.
+A plotter visualizes sampled data live as the scene steps, and can save the animation. Pass one as the `rec_options` argument of `scene.add_recorder`. See {doc}`index` for the recording workflow and the shared options (`hz`, `buffer_size`) that every plotter inherits.
 
 A data function that returns a `dict` becomes one labeled subplot per key.
 

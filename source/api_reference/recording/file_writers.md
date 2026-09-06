@@ -1,6 +1,6 @@
 # File writers
 
-A file writer records sampled data to disk. Pass one as the `rec_options` argument of `scene.start_recording`, and the recorder manager samples your data function on schedule and writes each sample to the file. See {doc}`index` for the recording workflow and the shared options (`hz`, `buffer_size`, `save_on_reset`) that every writer inherits.
+A file writer records sampled data to disk. Pass one as the `rec_options` argument of `scene.add_recorder`, and the recorder manager samples your data function on schedule and writes each sample to the file. See {doc}`index` for the recording workflow and the shared options (`hz`, `buffer_size`, `save_on_reset`) that every writer inherits.
 
 ## `gs.recorders.NPZFile`
 
@@ -41,7 +41,25 @@ Encodes a stream of image frames to a video file. Pair it with a data function t
     :show-inheritance:
 ```
 
+## `gs.recorders.TrajectoryFile`
+
+Records the state of the scene itself, one frame per step, to a `.gstraj` file. Register it with `scene.start_recording`, which takes the options alone since the scene is the data source, and open the file with `gs.Scene.load_trajectory` to seek and replay it. See {doc}`/user_guide/configuration/checkpoints` for the workflow.
+
+```{eval-rst}
+.. autoclass:: genesis.options.recorders.TrajectoryFile
+
+.. autoclass:: genesis.recorders.trajectory.TrajectoryFileWriter
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+.. autoclass:: genesis.recorders.trajectory.Trajectory
+    :members:
+    :undoc-members:
+```
+
 ## See also
 
 - {doc}`index`: the recording workflow and shared recorder options.
 - {doc}`plotters`: live plotting instead of writing to a file.
+- {doc}`/user_guide/configuration/checkpoints`: checkpoints and trajectories of a scene.

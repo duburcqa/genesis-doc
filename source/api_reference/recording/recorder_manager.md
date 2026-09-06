@@ -15,5 +15,5 @@ For the recording workflow, registering recorders, and camera video capture, see
 
 - {doc}`/user_guide/sensing/recorders`: task-oriented guide to recording.
 - {doc}`recorder`: base recorder class.
-- {doc}`file_writers` and {doc}`plotters`: the recorder options you pass to `start_recording`.
-- {doc}`/api_reference/engine/scene`: `scene.start_recording` and `scene.stop_recording`.
+- {doc}`file_writers` and {doc}`plotters`: the recorder options you pass to `add_recorder`.
+- {doc}`/api_reference/engine/scene`: `scene.add_recorder`, `scene.start_recording`, and `scene.stop_recording`.

@@ -67,6 +67,12 @@ gs play xml/franka_emika_panda/panda.xml
 gs animate 'frames/*.png' --fps 60
 ```
 
+**`gs replay file.gstraj`** opens the scene a trajectory was recorded from and replays the recording in the viewer, in a loop, until the viewer is closed. See {doc}`Checkpoints and simulation state </user_guide/configuration/checkpoints>` for recording one.
+
+```bash
+gs replay run.gstraj
+```
+
 :::{note}
 `gs view` still works as a deprecated alias of `gs launch` and prints a deprecation warning. Use `gs launch` instead.
 :::
