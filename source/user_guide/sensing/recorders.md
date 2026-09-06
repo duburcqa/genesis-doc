@@ -112,7 +112,6 @@ For more usage: camera video and image recording in [`examples/manipulation/gras
 Every recorder options object accepts a few shared settings:
 
 - `hz`: how often to sample, in samples per second. If omitted, the data function runs every step. Genesis World snaps `hz` to the nearest integer multiple of the timestep and warns if it had to adjust.
-- `save_on_reset` (file writers): when `True`, `scene.reset()` flushes the current file and appends an incrementing counter to the filename, starting a fresh recording per episode.
 - `buffer_size` and `buffer_full_wait_time`: bound the background queue used when recording off-thread. When the queue is full for longer than `buffer_full_wait_time`, the oldest sample is dropped.
 
 ```python
@@ -122,7 +121,7 @@ scene.add_recorder(
 )
 ```
 
-A failure on a recorder's background thread, such as a disk that fills up, is raised on the stepping thread at the next step, so a broken recording is reported where the simulation runs.
+A failure of a recorder, a sample or a write that raises, such as a disk that fills up, is raised on the stepping thread: at once from `scene.step()` when the recorder runs there, at the next step or `sync()` when it runs on a background thread. The recorder that failed records no more, a reset of the scene restarts the others, and `scene.stop_recording()` still flushes what it wrote. A reset of the scene never starts a new file: the recording goes on in the same one, with the state re-initialized.
 
 ## Stopping recording
 

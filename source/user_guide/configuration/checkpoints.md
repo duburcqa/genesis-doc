@@ -167,9 +167,9 @@ The writer runs on the stepping thread, so every frame is kept, and compresses a
 - **Exact** (the default for a single environment): every frame holds everything a step reads or writes, so a replay is bit-for-bit and the simulation resumes from any frame.
 - **Compressed** (the default for a batched scene, with a warning): every frame holds the model parameters, configuration, velocities, accelerations, control inputs, contacts, and constraint forces. The file is several times smaller, and a load recomputes the link and geom poses by forward kinematics, which may differ at the last bits.
 
-`hz` records every few steps, `chunk_size` sets how many frames a chunk holds (larger chunks compress better and seek slower), and `max_size` caps the file, closing it as a valid log and raising at the next step past the cap, so a run left recording fills the disk by at most 2 GiB by default. `save_on_reset` starts a new numbered file at every reset of the whole scene, each closing on the state the reset left behind.
+`hz` records every few steps, `chunk_size` sets how many frames a chunk holds (larger chunks compress better and seek slower), and `max_size` caps the file, closing it as a valid log and raising at the next step past the cap, so a run left recording fills the disk by at most 2 GiB by default.
 
-`gs.Scene.load_trajectory(path)` creates and builds the recorded scene and returns a {py:class}`Trajectory <genesis.recorders.trajectory.Trajectory>` that plays in it. Frame `i` is the state after `i` steps; `seek(i)` puts the scene there, `play()` seeks every frame and redraws the viewer at the pace the recording ran at, `frame(i)` returns the arrays of a frame by name, and `time(i)` the simulated time of each environment:
+`gs.Scene.load_trajectory(path)` creates and builds the recorded scene and returns a {py:class}`Trajectory <genesis.recorders.trajectory.Trajectory>` that plays in it. Frame `i` is the state after `i` steps; `seek(i)` puts the scene there, `play()` seeks every frame and redraws the viewer at the pace the recording ran at, `frame(i)` returns the arrays of a frame by name, and `time(i)` the simulated time of each environment. A negative index counts from the end. The last frame, like a checkpoint file, holds every array but the configs and constants, the scratch of the solvers included, for the analysis of a failure that may depend on the platform and never reproduce once shared:
 
 ```python
 trajectory = gs.Scene.load_trajectory("run.gstraj", show_viewer=True)
@@ -195,7 +195,7 @@ The dynamic state each solver contributes to a `SimState`:
 
 ## Reproducibility notes
 
-- **Configuration must match.** A snapshot restores fields by position into an already-built scene. The entities, solver options, and environment count must match the scene that produced it. There is no compatibility check: a mismatch fails or silently corrupts state. A checkpoint or a trajectory frame restores arrays by name and checks their shapes, so one from another build is rejected and named.
+- **Configuration must match.** A snapshot restores fields by position into an already-built scene. The entities, solver options, and environment count must match the scene that produced it. There is no compatibility check: a mismatch fails or silently corrupts state. A checkpoint or a trajectory frame restores arrays by name and checks their shapes, so one from another build is rejected and named. Both also carry a digest of the scene description, its entities and physics options, and restore only into a scene sharing it, whatever its viewer, visualizer and renderer options. The digest exports the description in memory, meshes included, once per built scene and once per trajectory opened, never per restore.
 - **Precision limits exactness.** Genesis World uses 32-bit floats by default (see {doc}`initialization`). Reproducing a run by stepping a loaded scene, or restoring a snapshot that went through a file, is therefore accurate to roughly single precision, not bit-exact. Initialize with `precision="64"` if you need tighter reproducibility.
 
 ## See also
